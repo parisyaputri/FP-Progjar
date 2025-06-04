@@ -12,13 +12,24 @@ class Board:
     def draw(self, screen, title, font):
         label = font.render(title, True, (255, 255, 255))
         screen.blit(label, (self.x_offset, self.y_offset - 30))
+
         for y in range(BOARD_SIZE):
             for x in range(BOARD_SIZE):
-                rect = pygame.Rect(self.x_offset + x * CELL_SIZE, self.y_offset + y * CELL_SIZE, CELL_SIZE, CELL_SIZE)
+                rect = pygame.Rect(
+                    self.x_offset + x * CELL_SIZE,
+                    self.y_offset + y * CELL_SIZE,
+                    CELL_SIZE, CELL_SIZE
+                )
                 pygame.draw.rect(screen, (255, 255, 255), rect, 1)
+
                 value = self.grid[y][x]
                 if value in ['X', 'O', '@']:
-                    color = (0, 255, 0) if value == '@' else (255, 0, 0) if value == 'X' else (0, 0, 255)
+                    if value == 'X':
+                        color = (255, 0, 0)       # Hit = Merah
+                    elif value == 'O':
+                        color = (0, 0, 255)       # Miss = Biru
+                    elif value == '@':
+                        color = (0, 255, 0)       # Ship = Hijau
                     pygame.draw.circle(screen, color, rect.center, CELL_SIZE // 3)
 
     def get_cell(self, pos):
@@ -36,17 +47,17 @@ class Board:
         r, c = start
         for i in range(length):
             if horizontal:
-                self.grid[r][c+i] = '@'
+                self.grid[r][c + i] = '@'
             else:
-                self.grid[r+i][c] = '@'
+                self.grid[r + i][c] = '@'
 
     def is_valid_placement(self, start, length, horizontal=True):
         r, c = start
         for i in range(length):
             if horizontal:
-                if c+i >= BOARD_SIZE or self.grid[r][c+i] != '~':
+                if c + i >= BOARD_SIZE or self.grid[r][c + i] != '~':
                     return False
             else:
-                if r+i >= BOARD_SIZE or self.grid[r+i][c] != '~':
+                if r + i >= BOARD_SIZE or self.grid[r + i][c] != '~':
                     return False
         return True
