@@ -13,52 +13,73 @@ class BattleshipGame:
         self.running = True
         self.font = pygame.font.SysFont(None, 32)
 
-        # create both boards
         self.my_board = Board(100, 100)
         self.enemy_board = Board(600, 100)
 
-        self.conn = conn            # TCP connection to server
-        self.is_host = is_host      # determines who starts first
-        self.my_turn = is_host      # host starts first
-        self.placed = False         # check if all ships are placed 
-        self.enemy_placed = False   # check if all ships are placed (enemy)
+        self.conn = conn
+        self.is_host = is_host
+        self.my_turn = is_host
+        self.placed = False
+        self.enemy_placed = False
+        self.win_status = None
 
-        # Ships to place: (length, orientation)
         self.ships_to_place = [(5, True), (4, True), (3, True)]
-        # to use vertical press the "Orientation" button
-        self.current_orientation = True  # True = horizontal, False = vertical
+        self.current_orientation = True
 
-        # orientation toggle button
         self.orientation_button = pygame.Rect(100, 30, 200, 40)
+        self.play_again_button = pygame.Rect(WIDTH // 2 - 100, HEIGHT // 2 + 40, 200, 40)
+        self.exit_button = pygame.Rect(WIDTH // 2 - 100, HEIGHT // 2 + 100, 200, 40)
+
+    def reset_game(self):
+        self.__init__(self.screen, self.is_host, self.conn)
+
+    def check_win(self, board):
+        for row in board.grid:
+            if '@' in row:
+                return False
+        return True
 
     def draw_orientation_button(self):
-        # draw the orientation toggle button
         pygame.draw.rect(self.screen, (0, 100, 200), self.orientation_button)
         text = self.font.render("Orientation: " + ("Horizontal" if self.current_orientation else "Vertical"), True, (255, 255, 255))
         self.screen.blit(text, (110, 38))
 
+    def draw_end_buttons(self):
+        pygame.draw.rect(self.screen, (0, 200, 100), self.play_again_button)
+        pygame.draw.rect(self.screen, (200, 0, 0), self.exit_button)
+        play_text = self.font.render("Play Again", True, (255, 255, 255))
+        exit_text = self.font.render("Exit Game", True, (255, 255, 255))
+        self.screen.blit(play_text, (self.play_again_button.x + 50, self.play_again_button.y + 8))
+        self.screen.blit(exit_text, (self.exit_button.x + 60, self.exit_button.y + 8))
+
     def draw(self):
-        # Main draw method for UI
         self.screen.fill((0, 0, 0))
-        if not self.placed:
+        if self.win_status:
+            msg = self.font.render("You Won!" if self.win_status == 'win' else "You Lose!", True, (0, 255, 0) if self.win_status == 'win' else (255, 0, 0))
+            self.screen.blit(msg, (WIDTH // 2 - msg.get_width() // 2, HEIGHT // 2 - 60))
+            self.draw_end_buttons()
+        elif not self.placed:
             self.my_board.draw(self.screen, "Place Your Ships", self.font)
             self.draw_orientation_button()
         elif not self.enemy_placed:
-            # Waiting screen
-            self.screen.fill((0, 0, 0))
             msg = self.font.render("Waiting for opponent to place ships...", True, (255, 255, 255))
             self.screen.blit(msg, (WIDTH // 2 - msg.get_width() // 2, HEIGHT // 2))
         else:
-            # Gameplay mode
             self.my_board.draw(self.screen, "Your Board", self.font)
             self.enemy_board.draw(self.screen, "Enemy Board", self.font)
 
-        pygame.display.flip()  # Update the screen
+        pygame.display.flip()
 
     def handle_click(self, pos):
-        # Handle mouse click events
+        if self.win_status:
+            if self.play_again_button.collidepoint(pos):
+                self.reset_game()
+                return
+            elif self.exit_button.collidepoint(pos):
+                self.running = False
+                return
+
         if not self.placed:
-            # Toggle orientation if button clicked
             if self.orientation_button.collidepoint(pos):
                 self.current_orientation = not self.current_orientation
                 return
@@ -71,23 +92,23 @@ class BattleshipGame:
                 self.ships_to_place.pop(0)
                 if not self.ships_to_place:
                     self.placed = True
-                    self.send({'type': 'ready'})  # Notify opponent
+                    self.send({'type': 'ready'})
         elif self.my_turn and self.enemy_placed:
-            # Attack phase
             cell = self.enemy_board.get_cell(pos)
             if cell:
+                r, c = cell
+                if self.enemy_board.grid[r][c] in ['X', 'O']:
+                    return
                 self.send({'type': 'attack', 'cell': cell})
                 self.my_turn = False
 
     def send(self, data):
-        # Send data to the other player
         try:
             self.conn.sendall(pickle.dumps(data))
         except Exception as e:
             print("[SEND ERROR]", e)
 
     def receive(self):
-        # Receive data from the other player in a separate thread
         while self.running:
             try:
                 data = self.conn.recv(4096)
@@ -95,24 +116,27 @@ class BattleshipGame:
                     break
                 msg = pickle.loads(data)
                 if msg['type'] == 'attack':
-                    # Handle incoming attack
                     r, c = msg['cell']
                     hit = self.my_board.grid[r][c] == '@'
                     self.my_board.grid[r][c] = 'X' if hit else 'O'
-                    self.send({'type': 'result', 'cell': (r, c), 'hit': hit})
-                    self.my_turn = True
+                    if self.check_win(self.my_board):
+                        self.send({'type': 'game_over'})
+                        self.win_status = 'lose'
+                    else:
+                        self.send({'type': 'result', 'cell': (r, c), 'hit': hit})
+                        self.my_turn = True
                 elif msg['type'] == 'result':
-                    # Update enemy board with result of our attack
                     r, c = msg['cell']
                     self.enemy_board.grid[r][c] = 'X' if msg['hit'] else 'O'
                 elif msg['type'] == 'ready':
-                    self.enemy_placed = True  # Opponent is ready
+                    self.enemy_placed = True
+                elif msg['type'] == 'game_over':
+                    self.win_status = 'win'
             except Exception as e:
                 print("[RECEIVE ERROR]", e)
                 break
 
     def run(self):
-        # Start the game loop and receiving thread
         threading.Thread(target=self.receive, daemon=True).start()
         while self.running:
             self.clock.tick(FPS)
@@ -122,4 +146,4 @@ class BattleshipGame:
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     self.handle_click(event.pos)
             self.draw()
-        self.conn.close()  # Close connection on quit
+        self.conn.close()
