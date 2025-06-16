@@ -159,6 +159,8 @@ class BattleshipGame:
                     # Update enemy board with attack result
                     r, c = msg['cell']
                     self.enemy_board.grid[r][c] = 'X' if msg['hit'] else 'O'
+                    # Kalau hit, tetap giliran sendiri; kalau miss, giliran lawan
+                    self.my_turn = msg['hit']
                 elif msg['type'] == 'ready':
                     # Opponent finished ship placement
                     self.enemy_placed = True
